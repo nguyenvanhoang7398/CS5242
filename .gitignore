@@ -1,0 +1,9 @@
+image_data/
+trained_models/
+*.pth
+*.zip
+*.tar.gz
+data/
+.DS_Store
+*.csv
+.idea/
