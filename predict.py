@@ -1,4 +1,4 @@
-from train import load_my_alexnet, create_loaders, eval_fn
+from train import load_my_alexnet, create_loaders, eval_fn, load_wide_resnet
 from loader.dataset import MedicalImageDataset
 from torch.utils.data import DataLoader
 import torch
@@ -8,7 +8,7 @@ import pandas as pd
 
 
 def create_predict_loaders(predict_transform):
-    batch_size = 64
+    batch_size = 16
     test_image_dir = os.path.join("image_data", "test_image", "test_image")
     predict_dataset = MedicalImageDataset(label_path=None, image_dir=test_image_dir, transform=predict_transform,
                                           test=True)
@@ -20,16 +20,19 @@ def create_predict_loaders(predict_transform):
 def predict():
     num_classes = 3
     device = torch.device("cuda:1")
-    checkpoint_path = "trained_models/pretrained-alexnet-10_02_20-11-09-12/best.pth"
+    # checkpoint_path = "trained_models/pretrained-alexnet-10_02_20-11-09-12/best.pth"
+    checkpoint_path = "trained_models/pretrained-wide-resnet-10_02_20-23-32-58/best.pth"
 
-    model, train_transform, predict_transform = load_my_alexnet(num_classes, device)
+    # model, train_transform, predict_transform = load_my_alexnet(num_classes, device)
+    model, train_transform, predict_transform, _ = load_wide_resnet(num_classes, device)
+
     model.load_state_dict(torch.load(checkpoint_path)["model"])
 
     predict_dataset, predict_loader = create_predict_loaders(predict_transform)
 
     train_dataset, train_loader, valid_dataset, valid_loader = create_loaders(train_transform=train_transform,
                                                                               valid_transform=predict_transform,
-                                                                              fold_idx=1)
+                                                                              fold_idx=8)
 
     print("Evaluating model on valid dataset")
     valid_report = eval_fn(model, valid_dataset, valid_loader, device, None)

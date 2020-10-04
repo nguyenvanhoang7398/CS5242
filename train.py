@@ -3,6 +3,7 @@ from sklearn.metrics import classification_report
 from loader.dataset import MedicalImageDataset
 import os
 from torchvision import transforms
+from torchvision import models
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch import nn
@@ -11,42 +12,67 @@ from tqdm import tqdm
 import torch
 from models.alexnet import AlexNet
 import torch.optim as optim
-from pprint import pprint
 from utils import get_exp_name
 
 
-def load_my_alexnet(num_classes, device):
+def load_common_transform(image_size=256, crop_size=224):
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
-    model = AlexNet(num_classes=num_classes).to(device)
     train_transform = transforms.Compose([
-        transforms.Resize(227),
+        transforms.RandomHorizontalFlip(),
         transforms.RandomRotation(degrees=(-15, 15)),
+        transforms.Resize(image_size),
+        transforms.CenterCrop(crop_size),
         transforms.ToTensor(),
         transforms.Normalize(mean=mean, std=std)
     ])
 
     valid_transform = transforms.Compose([
-        transforms.Resize(227),
+        transforms.Resize(size=(image_size, image_size), interpolation=2),
         transforms.ToTensor(),
         transforms.Normalize(mean=mean, std=std)
     ])
-    return model, train_transform, valid_transform
+    return train_transform, valid_transform
+
+
+def load_my_alexnet(num_classes, device):
+    model = AlexNet(num_classes=num_classes).to(device)
+    train_transform, valid_transform = load_common_transform()
+    return model, train_transform, valid_transform, "alexnet"
+
+
+def load_wide_resnet(num_classes, device):
+    model = models.wide_resnet50_2(pretrained=True).to(device)
+    last_layer_idx = 8
+
+    # for i, child in enumerate(model.children()):
+    #     if i < last_layer_idx:
+    #         for param in child.parameters():
+    #             param.requires_grad = False
+    num_ftrs = model.fc.in_features
+    model.fc = nn.Sequential(nn.Linear(num_ftrs, 256), nn.Linear(256, num_classes)).to(device)
+
+    train_transform, valid_transform = load_common_transform(image_size=256, crop_size=224)
+    return model, train_transform, valid_transform, "pretrained-wide-resnet"
+
+
+def load_pretrained_resnet(num_classes, device):
+    model = models.resnext50_32x4d(pretrained=True).to(device)
+    last_layer_idx = 8
+
+    # for i, child in enumerate(model.children()):
+    #     if i < last_layer_idx:
+    #         for param in child.parameters():
+    #             param.requires_grad = False
+    num_ftrs = model.fc.in_features
+    model.fc = nn.Sequential(nn.Linear(num_ftrs, 256), nn.Linear(256, num_classes)).to(device)
+
+    train_transform, valid_transform = load_common_transform(image_size=224)
+    return model, train_transform, valid_transform, "pretrained-resnext"
 
 
 def load_pretrained_alexnet(num_classes, device):
-    mean = [0.485, 0.456, 0.406]
-    std = [0.229, 0.224, 0.225]
     model = torch.hub.load('pytorch/vision:v0.6.0', 'alexnet').to(device)
-    train_transform = transforms.Compose([
-        transforms.Resize(227),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=mean, std=std),
-    ])
-    valid_transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(mean=mean, std=std)
-    ])
     lass_layer_idx = 6
 
     # Freezing everything but the last classifier:
@@ -65,10 +91,11 @@ def load_pretrained_alexnet(num_classes, device):
     last_layer_input = model.classifier[lass_layer_idx].in_features
     model.classifier[lass_layer_idx] = nn.Linear(last_layer_input, num_classes).to(device)
 
-    return model, train_transform, valid_transform
+    train_transform, valid_transform = load_common_transform(image_size=256, crop_size=227)
+    return model, train_transform, valid_transform, "pretrained-alexnet"
 
 
-def create_loaders(train_transform, valid_transform, fold_idx=4):
+def create_loaders(train_transform, valid_transform, fold_idx=0):
     batch_size = 64
     train_label_path = os.path.join("image_data", "folds", "fold_{}".format(fold_idx), "train_labels.csv")
     valid_label_path = os.path.join("image_data", "folds", "fold_{}".format(fold_idx), "valid_labels.csv")
@@ -85,16 +112,19 @@ def create_loaders(train_transform, valid_transform, fold_idx=4):
 
 def train_fn():
     model_name = "pretrained-alexnet"
-    exp_name = get_exp_name(model_name)
     num_classes = 3
     epochs = 50
 
-    device = torch.device("cuda:2")
+    device = torch.device("cuda:6")
     # device = torch.device("cpu")
-    writer = SummaryWriter(os.path.join("runs", exp_name))
 
-    model, train_transform, valid_transform = load_my_alexnet(num_classes, device)
-    # model, train_transform, valid_transform = load_pretrained_alexnet(num_classes, device)
+    # model, train_transform, valid_transform, model_name = load_my_alexnet(num_classes, device)
+    # model, train_transform, valid_transform, model_name = load_pretrained_alexnet(num_classes, device)
+    model, train_transform, valid_transform, model_name = load_pretrained_resnet(num_classes, device)
+    # model, train_transform, valid_transform, model_name = load_wide_resnet(num_classes, device)
+
+    exp_name = get_exp_name(model_name)
+    writer = SummaryWriter(os.path.join("runs", exp_name))
 
     train_dataset, train_loader, valid_dataset, valid_loader = create_loaders(train_transform, valid_transform)
     train_size = len(train_dataset)

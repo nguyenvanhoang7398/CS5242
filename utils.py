@@ -1,5 +1,6 @@
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import accuracy_score
 import os
 import numpy as np
 from datetime import datetime
@@ -37,5 +38,16 @@ def create_validation_folds(train_label_path, output, n_folds=10):
         valid_df.to_csv(valid_path, index=False)
 
 
+def compare_2_submission(base, new):
+    base_df = pd.read_csv(base)
+    new_df = pd.read_csv(new)
+
+    base_y = np.array(base_df["Label"].tolist())
+    new_y = np.array(new_df["Label"].tolist())
+
+    print("Accuracy = {}".format(accuracy_score(base_y, new_y)))
+
+
 if __name__ == "__main__":
-    create_validation_folds(os.path.join("image_data", "train_label.csv"), os.path.join("image_data", "folds"))
+    # create_validation_folds(os.path.join("image_data", "train_label.csv"), os.path.join("image_data", "folds"))
+    compare_2_submission("model-preds.csv", "prediction_wide_resnet.csv")
