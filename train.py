@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 import torch
 from models.alexnet import AlexNet
+from loader.augmentor import AddGaussianNoise
 import torch.optim as optim
 from utils import get_exp_name
 
@@ -24,11 +25,12 @@ def load_common_transform(image_size=256, crop_size=224):
         transforms.Resize(image_size),
         transforms.CenterCrop(crop_size),
         transforms.ToTensor(),
-        transforms.Normalize(mean=mean, std=std)
+        transforms.Normalize(mean=mean, std=std),
+        # AddGaussianNoise(0., 0.05)
     ])
 
     valid_transform = transforms.Compose([
-        transforms.Resize(size=(image_size, image_size), interpolation=2),
+        transforms.Resize(image_size),
         transforms.ToTensor(),
         transforms.Normalize(mean=mean, std=std)
     ])
@@ -42,30 +44,41 @@ def load_my_alexnet(num_classes, device):
 
 
 def load_wide_resnet(num_classes, device):
-    model = models.wide_resnet50_2(pretrained=True).to(device)
-    last_layer_idx = 8
+    model = models.wide_resnet101_2(pretrained=True).to(device)
+    trained_layer_indices = [7, 9]
 
-    # for i, child in enumerate(model.children()):
-    #     if i < last_layer_idx:
-    #         for param in child.parameters():
-    #             param.requires_grad = False
+    for i, child in enumerate(model.children()):
+        print(i, child)
+        if i not in trained_layer_indices:
+            for param in child.parameters():
+                param.requires_grad = False
     num_ftrs = model.fc.in_features
-    model.fc = nn.Sequential(nn.Linear(num_ftrs, 256), nn.Linear(256, num_classes)).to(device)
+    # model.fc = nn.Sequential(nn.Linear(num_ftrs, 256), nn.Linear(256, num_classes)).to(device)
+    model.fc = nn.Linear(num_ftrs, num_classes).to(device)
 
     train_transform, valid_transform = load_common_transform(image_size=256, crop_size=224)
     return model, train_transform, valid_transform, "pretrained-wide-resnet"
 
 
+def load_pretrained_densenet(num_classes, device):
+    model = models.densenet121(pretrained=True).to(device)
+    num_ftrs = model.classifier.in_features
+    model.fc = nn.Linear(num_ftrs, num_classes).to(device)
+
+    train_transform, valid_transform = load_common_transform(image_size=224)
+    return model, train_transform, valid_transform, "pretrained-densenet"
+
+
 def load_pretrained_resnet(num_classes, device):
     model = models.resnext50_32x4d(pretrained=True).to(device)
-    last_layer_idx = 8
+    trained_layer_indices = [9]
 
-    # for i, child in enumerate(model.children()):
-    #     if i < last_layer_idx:
-    #         for param in child.parameters():
-    #             param.requires_grad = False
+    for i, child in enumerate(model.children()):
+        if i not in trained_layer_indices:
+            for param in child.parameters():
+                param.requires_grad = False
     num_ftrs = model.fc.in_features
-    model.fc = nn.Sequential(nn.Linear(num_ftrs, 256), nn.Linear(256, num_classes)).to(device)
+    model.fc = nn.Linear(num_ftrs, num_classes).to(device)
 
     train_transform, valid_transform = load_common_transform(image_size=224)
     return model, train_transform, valid_transform, "pretrained-resnext"
@@ -95,7 +108,7 @@ def load_pretrained_alexnet(num_classes, device):
     return model, train_transform, valid_transform, "pretrained-alexnet"
 
 
-def create_loaders(train_transform, valid_transform, fold_idx=0):
+def create_loaders(train_transform, valid_transform, fold_idx=9):
     batch_size = 64
     train_label_path = os.path.join("image_data", "folds", "fold_{}".format(fold_idx), "train_labels.csv")
     valid_label_path = os.path.join("image_data", "folds", "fold_{}".format(fold_idx), "valid_labels.csv")
@@ -111,7 +124,6 @@ def create_loaders(train_transform, valid_transform, fold_idx=0):
 
 
 def train_fn():
-    model_name = "pretrained-alexnet"
     num_classes = 3
     epochs = 50
 
@@ -120,8 +132,10 @@ def train_fn():
 
     # model, train_transform, valid_transform, model_name = load_my_alexnet(num_classes, device)
     # model, train_transform, valid_transform, model_name = load_pretrained_alexnet(num_classes, device)
-    model, train_transform, valid_transform, model_name = load_pretrained_resnet(num_classes, device)
-    # model, train_transform, valid_transform, model_name = load_wide_resnet(num_classes, device)
+    # model, train_transform, valid_transform, model_name = load_pretrained_resnet(num_classes, device)
+    model, train_transform, valid_transform, model_name = load_wide_resnet(num_classes, device)
+    # model, train_transform, valid_transform, model_name = load_pretrained_densenet(num_classes, device)
+
 
     exp_name = get_exp_name(model_name)
     writer = SummaryWriter(os.path.join("runs", exp_name))
@@ -129,13 +143,12 @@ def train_fn():
     train_dataset, train_loader, valid_dataset, valid_loader = create_loaders(train_transform, valid_transform)
     train_size = len(train_dataset)
 
-    optimizer = optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), lr=0.0001)
-    lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
+    optimizer = optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), lr=0.0001, weight_decay=1e-2)
+    # lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
 
     best_acc_f1 = 0.
 
     for epoch in range(epochs):
-        lr_scheduler.step()
 
         train_predictions, train_labels = [], []
         epoch_loss = 0.
@@ -157,6 +170,8 @@ def train_fn():
             _, preds = torch.max(output, 1)
             train_predictions.extend(preds.detach().cpu().numpy())
             train_labels.extend(labels_cpu.numpy())
+
+        # lr_scheduler.step()
 
         print("Finish training Epoch: {}; Loss: {}".format(epoch+1, epoch_loss / train_size))
         train_report = classification_report(train_labels, train_predictions, output_dict=True)
