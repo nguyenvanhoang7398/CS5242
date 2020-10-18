@@ -3,6 +3,7 @@ import torch
 import pandas as pd
 import os
 from PIL import Image
+from torchvision.transforms import functional
 
 
 class MedicalImageDataset(Dataset):
@@ -30,6 +31,9 @@ class MedicalImageDataset(Dataset):
         image = Image.open(img_path)
         if self.transform:
             image = self.transform(image)
+
+        # reconstructed_img = functional.to_pil_image(image)
+        # reconstructed_img.show()
 
         label = -1 if self.test else self.label_data.iloc[item]["Label"]
         sample = {

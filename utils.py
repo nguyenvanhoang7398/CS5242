@@ -6,8 +6,8 @@ import numpy as np
 from datetime import datetime
 
 
-def get_exp_name(model_name):
-    return "{}-{}".format(model_name, datetime.now().strftime("%D-%H-%M-%S").replace("/", "_"))
+def get_exp_name(model_name, fold_idx):
+    return "{}-{}-{}".format(model_name, fold_idx, datetime.now().strftime("%D-%H-%M-%S").replace("/", "_"))
 
 
 def create_validation_folds(train_label_path, output, n_folds=10):
@@ -50,5 +50,5 @@ def compare_2_submission(base, new):
 
 if __name__ == "__main__":
     # create_validation_folds(os.path.join("image_data", "train_label.csv"), os.path.join("image_data", "folds"))
-    compare_2_submission("prediction_wide_resnet.csv", "prediction_wide_resnet_tuned.csv")
-    compare_2_submission("model-preds.csv", "prediction_wide_resnet.csv")
+    # compare_2_submission("prediction_wide_resnet.csv", "prediction_wide_resnet_tuned.csv")
+    compare_2_submission("prediction_wide_resnet_tuned2.csv", "prediction_ensemble.csv")
