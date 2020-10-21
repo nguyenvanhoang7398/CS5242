@@ -13,10 +13,14 @@ from collections import Counter
 import time
 
 import torch
-from models.alexnet import AlexNet
+import numpy as np
 from loader.augmentor import AddGaussianNoise
 import torch.optim as optim
 from utils import get_exp_name
+torch.manual_seed(0)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+np.random.seed(0)
 
 
 def load_transform(image_size=256, crop_size=224):
@@ -71,7 +75,6 @@ def load_wide_resnet(num_classes, device):
     trained_layer_indices = [7, 9]
 
     for i, child in enumerate(model.children()):
-        print(i, child)
         if i not in trained_layer_indices:
             for param in child.parameters():
                 param.requires_grad = False
@@ -85,15 +88,14 @@ def load_wide_resnet(num_classes, device):
 
 def load_pretrained_densenet(num_classes, device):
     model = models.densenet201(pretrained=True).to(device)
-    trained_layer_indices = [10, 11]
+    trained_layer_indices = [10, 11]    # last batch norm and dense block
 
     for i, child in enumerate(model.features.children()):
-        print(i, child)
         if i not in trained_layer_indices:
             for param in child.parameters():
                 param.requires_grad = False
     num_ftrs = model.classifier.in_features
-    model.fc = nn.Linear(num_ftrs, num_classes).to(device)
+    model.classifier = nn.Linear(num_ftrs, num_classes).to(device)
 
     train_transform, valid_transform = load_transform(image_size=256, crop_size=224)
     return model, train_transform, valid_transform, "pretrained-densenet"
@@ -132,7 +134,7 @@ def create_loaders(train_transform, valid_transform, fold_idx=0):
 def train_fn(model_name, fold_idx):
     print("Training {} on fold {}".format(model_name, fold_idx))
     num_classes = 3
-    epochs = 100
+    epochs = 50
 
     device = torch.device("cuda:3")
     # device = torch.device("cpu")
@@ -226,7 +228,8 @@ def eval_ensemble_fn(model_list, valid_dataset, valid_loader, device):
     for model in model_list:
         model.eval()
 
-    all_eval_predictions, eval_labels = [[] for _ in range(len(model_list))], []
+    all_eval_predictions, all_numeric_predictions, eval_labels = [[] for _ in range(len(model_list))], \
+                                                                 [[] for _ in range(len(model_list))], []
     eval_loss = 0.
 
     with torch.no_grad():
@@ -242,6 +245,7 @@ def eval_ensemble_fn(model_list, valid_dataset, valid_loader, device):
 
                 _, preds = torch.max(output, 1)
                 all_eval_predictions[model_idx].extend(preds.detach().cpu().numpy())
+                all_numeric_predictions[model_idx].extend(output.detach().cpu().numpy())
 
                 if model_idx == 0:
                     eval_labels.extend(labels_cpu.numpy())
@@ -253,7 +257,7 @@ def eval_ensemble_fn(model_list, valid_dataset, valid_loader, device):
 
     print("Finish evaluating, Loss: {}".format(eval_loss / len(valid_dataset)))
     report = classification_report(eval_labels, eval_predictions, output_dict=True)
-    return report
+    return report, all_numeric_predictions, eval_labels
 
 
 def eval_fn(model, valid_dataset, valid_loader, device, eval_times=5):
@@ -289,10 +293,29 @@ def eval_fn(model, valid_dataset, valid_loader, device, eval_times=5):
     return report
 
 
+def load_fold_models(fold, device):
+    num_classes = 3
+    wide_resnet, resnext, densenet = None, None, None
+    for folder in os.listdir("trained_models"):
+        if folder.startswith("pretrained-wide-resnet-{}".format(fold)):
+            wide_resnet_checkpoint_path = os.path.join("trained_models", folder, "best.pth")
+            wide_resnet, _, _, _ = load_wide_resnet(num_classes, device)
+            wide_resnet.load_state_dict(torch.load(wide_resnet_checkpoint_path)["model"])
+        if folder.startswith("pretrained-resnext-{}".format(fold)):
+            resnext_checkpoint_path = os.path.join("trained_models", folder, "best.pth")
+            resnext, _, _, _ = load_pretrained_resnext(num_classes, device)
+            resnext.load_state_dict(torch.load(resnext_checkpoint_path)["model"])
+        if folder.startswith("pretrained-densenet-{}".format(fold)):
+            densenet_checkpoint_path = os.path.join("trained_models", folder, "best.pth")
+            densenet, _, _, _ = load_pretrained_densenet(num_classes, device)
+            densenet.load_state_dict(torch.load(densenet_checkpoint_path)["model"])
+    return wide_resnet, resnext, densenet
+
+
 if __name__ == "__main__":
     start_time = time.time()
-    for fold in range(6, 10):
-        for model_n in ["wide_resnet", "densenet", "resnext"]:
-            train_fn(model_n, fold)
+    for f in range(7, 8):
+        for model_n in ["resnext"]:
+            train_fn(model_n, f)
     end_time = time.time()
     print("Finished in {}".format(end_time - start_time))

@@ -51,4 +51,5 @@ def compare_2_submission(base, new):
 if __name__ == "__main__":
     # create_validation_folds(os.path.join("image_data", "train_label.csv"), os.path.join("image_data", "folds"))
     # compare_2_submission("prediction_wide_resnet.csv", "prediction_wide_resnet_tuned.csv")
-    compare_2_submission("prediction_wide_resnet_tuned2.csv", "prediction_ensemble.csv")
+    # compare_2_submission("prediction_ensemble.csv", "prediction_ensemble_rf.csv")
+    compare_2_submission("prediction_ensemble_rf2.csv", "prediction_ensemble_rf3.csv")
