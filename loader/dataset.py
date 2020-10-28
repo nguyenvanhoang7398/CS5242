@@ -5,6 +5,7 @@ import os
 from PIL import Image
 from torchvision.transforms import functional
 import random
+random.seed(5242)
 
 
 class MedicalImageDataset(Dataset):
