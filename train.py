@@ -12,20 +12,40 @@ from tqdm import tqdm
 from collections import Counter
 import time
 from models.triplet_loss import TripletLoss
+from models.small_cnn import SmallCNN
+from models.alexnet import AlexNet
 
 import torch
 import numpy as np
 from loader.augmentor import AddGaussianNoise
 import torch.optim as optim
 from utils import get_exp_name
+
 torch.manual_seed(0)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 np.random.seed(0)
 
+TRIPLET_LOSS_WEIGHT = 0  # Tune this
+
 
 def load_transform(image_size=256, crop_size=224):
     return load_common_transform(image_size, crop_size)
+
+
+def load_full_size_transform():
+    train_transform = transforms.Compose([
+        transforms.RandomVerticalFlip(),
+        # transforms.RandomRotation(degrees=(-5, 5)),
+        transforms.ToTensor(),
+        # AddGaussianNoise(0., 0.001),
+    ])
+
+    valid_transform = transforms.Compose([
+        transforms.RandomVerticalFlip(),
+        transforms.ToTensor(),
+    ])
+    return train_transform, valid_transform
 
 
 def load_common_transform(image_size=256, crop_size=224):
@@ -33,11 +53,11 @@ def load_common_transform(image_size=256, crop_size=224):
     std = [0.229, 0.224, 0.225]
     train_transform = transforms.Compose([
         transforms.RandomVerticalFlip(),
-        transforms.RandomRotation(degrees=(-5, 5)),
+        # transforms.RandomRotation(degrees=(-5, 5)),
         transforms.Resize(image_size),
         transforms.CenterCrop(crop_size),
         transforms.ToTensor(),
-        AddGaussianNoise(0., 0.005),
+        # AddGaussianNoise(0., 0.001),
         transforms.Normalize(mean=mean, std=std)
     ])
 
@@ -71,16 +91,32 @@ def load_old_transform(image_size=256, crop_size=224):
     return train_transform, valid_transform
 
 
+def load_alexnet(num_classes, device):
+    model = AlexNet(num_classes).to(device)
+    train_transform, valid_transform = load_full_size_transform()
+    return model, train_transform, valid_transform, "alexnet"
+
+
+def load_small_cnn(num_classes, device):
+    model = SmallCNN(num_classes).to(device)
+    small_train_transform, small_valid_transform = load_full_size_transform()
+    return model, small_train_transform, small_valid_transform, "small-cnn"
+
+
 def load_wide_resnet(num_classes, device):
-    model = models.wide_resnet101_2(pretrained=True).to(device)
-    trained_layer_indices = [7, 9]
+    model = models.wide_resnet50_2(pretrained=True).to(device)
+    # trained_layer_indices = [7, 9]
+    trained_layer_indices = [6, 7, 9]
 
     for i, child in enumerate(model.children()):
+        print(i, child)
         if i not in trained_layer_indices:
             for param in child.parameters():
                 param.requires_grad = False
     num_ftrs = model.fc.in_features
     # model.fc = nn.Sequential(nn.Linear(num_ftrs, 256), nn.Linear(256, num_classes)).to(device)
+    model.layer4 = nn.Sequential().to(device)
+    num_ftrs = 1024
     model.fc = nn.Linear(num_ftrs, num_classes).to(device)
 
     train_transform, valid_transform = load_transform(image_size=256, crop_size=224)
@@ -135,9 +171,9 @@ def create_loaders(train_transform, valid_transform, fold_idx=0):
 def train_fn(model_name, fold_idx):
     print("Training {} on fold {}".format(model_name, fold_idx))
     num_classes = 3
-    epochs = 50
+    epochs = 100
 
-    device = torch.device("cuda:2")
+    device = torch.device("cuda:0")
     # device = torch.device("cpu")
 
     if model_name == "wide_resnet":
@@ -146,6 +182,10 @@ def train_fn(model_name, fold_idx):
         model, train_transform, valid_transform, model_name = load_pretrained_densenet(num_classes, device)
     elif model_name == "resnext":
         model, train_transform, valid_transform, model_name = load_pretrained_resnext(num_classes, device)
+    elif model_name == "small-cnn":
+        model, train_transform, valid_transform, model_name = load_small_cnn(num_classes, device)
+    elif model_name == "alexnet":
+        model, train_transform, valid_transform, model_name = load_alexnet(num_classes, device)
     else:
         raise ValueError("Unsupported model {}".format(model_name))
 
@@ -156,11 +196,12 @@ def train_fn(model_name, fold_idx):
                                                                               fold_idx=fold_idx)
     train_size = len(train_dataset)
 
-    optimizer = optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), lr=0.0001, weight_decay=1e-3)
-    # lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    optimizer = optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), lr=0.0001, weight_decay=5e-3)
+    # optimizer = optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), lr=0.001, weight_decay=0)
+    # lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.5)
 
     best_acc_f1 = 0.
-    triplet_criterion = TripletLoss()
+    triplet_criterion = TripletLoss(margin=1.0)   # Tune this
 
     for epoch in range(epochs):
 
@@ -180,7 +221,11 @@ def train_fn(model_name, fold_idx):
 
             supervised_loss = F.cross_entropy(anchor_output, labels)
             triplet_loss = triplet_criterion(anchor_output, pos_output, neg_output)
-            total_loss = supervised_loss + triplet_loss
+            if TRIPLET_LOSS_WEIGHT == 0:
+                total_loss = supervised_loss
+            else:
+                total_loss = (1 - TRIPLET_LOSS_WEIGHT) * supervised_loss + TRIPLET_LOSS_WEIGHT * triplet_loss
+
             epoch_loss += total_loss.item()
             epoch_supervised_loss += supervised_loss.item()
             epoch_triplet_loss += triplet_loss.item()
@@ -195,9 +240,12 @@ def train_fn(model_name, fold_idx):
             train_labels.extend(labels_cpu.numpy())
 
         # lr_scheduler.step()
+        # train_lr = lr_scheduler.get_last_lr()[0]
 
+        avg_supervised_loss, avg_triplet_loss, avg_epoch_loss = epoch_supervised_loss / train_size, \
+            epoch_triplet_loss / train_size, epoch_loss / train_size
         print("Finish training Epoch: {}; Supervised Loss: {}; Triplet Loss: {}; Total Loss: {};".format(
-            epoch+1, epoch_supervised_loss / train_size, epoch_triplet_loss / train_size, epoch_loss / train_size))
+            epoch+1, avg_supervised_loss, avg_triplet_loss, avg_epoch_loss))
         train_report = classification_report(train_labels, train_predictions, output_dict=True)
         train_acc, train_f1 = train_report["accuracy"], train_report["macro avg"]["f1-score"]
         print("Train Acc: {}; F1: {}".format(train_acc, train_f1))
@@ -208,8 +256,15 @@ def train_fn(model_name, fold_idx):
             else:
                 writer.add_scalar(tag="train_{}".format(metric_name), scalar_value=metric_values,
                                   global_step=epoch)
+        # writer.add_scalar(tag="train_lr", scalar_value=train_lr, global_step=epoch)
+        train_losses = {
+            "supervised_loss": avg_supervised_loss,
+            "triplet_loss": avg_triplet_loss,
+            "total_loss": avg_epoch_loss
+        }
+        writer.add_scalars(main_tag="train_loss", tag_scalar_dict=train_losses, global_step=epoch)
         print("Begin evaluating")
-        valid_report = eval_fn(model, valid_dataset, valid_loader, device, 1)
+        valid_report, valid_losses = eval_fn(model, valid_dataset, valid_loader, device, triplet_criterion, 1)
         valid_acc, valid_f1 = valid_report["accuracy"], valid_report["macro avg"]["f1-score"]
         print("Valid Acc: {}; F1: {}".format(valid_acc, valid_f1))
 
@@ -220,11 +275,11 @@ def train_fn(model_name, fold_idx):
             else:
                 writer.add_scalar(tag="valid_{}".format(metric_name), scalar_value=metric_values,
                                   global_step=epoch)
-
+        writer.add_scalars(main_tag="valid_loss", tag_scalar_dict=valid_losses, global_step=epoch)
         avg_acc_f1 = (valid_acc + valid_f1) / 2
         if avg_acc_f1 > best_acc_f1:
             best_acc_f1 = avg_acc_f1
-            checkpoint_dir = os.path.join("trained_models_test", exp_name)
+            checkpoint_dir = os.path.join("trained_models", exp_name)
             os.makedirs(checkpoint_dir, exist_ok=True)
             checkpoint_path = os.path.join(checkpoint_dir, "best.pth")
             state = {
@@ -272,24 +327,33 @@ def eval_ensemble_fn(model_list, valid_dataset, valid_loader, device):
     return report, all_numeric_predictions, eval_labels
 
 
-def eval_fn(model, valid_dataset, valid_loader, device, eval_times=5):
+def eval_fn(model, valid_dataset, valid_loader, device, triplet_criterion, eval_times=5):
     model.eval()
 
     all_eval_predictions, eval_labels = [[] for _ in range(eval_times)], []
     eval_loss = 0.
+    eval_supervised_loss, eval_triplet_loss = 0., 0.
 
     with torch.no_grad():
         for eval_time in range(eval_times):
             for batch in tqdm(valid_loader, desc="Evaluating"):
-                inputs, labels_cpu = batch["image"], batch["label"]
-                inputs = inputs.to(device)
-                labels = labels_cpu.to(device)
+                inputs, labels_cpu, pos_inputs, neg_inputs = batch["image"], batch["label"], \
+                                                             batch["pos_image"], batch["neg_image"]
+                inputs, labels, pos_inputs, neg_inputs = inputs.to(device), labels_cpu.to(device), \
+                                                         pos_inputs.to(device), neg_inputs.to(device)
 
-                output = model(inputs)
-                loss = F.cross_entropy(output, labels)
-                eval_loss += loss.item()
+                anchor_output = model(inputs)
+                pos_output = model(pos_inputs)
+                neg_output = model(neg_inputs)
 
-                _, preds = torch.max(output, 1)
+                supervised_loss = F.cross_entropy(anchor_output, labels)
+                triplet_loss = triplet_criterion(anchor_output, pos_output, neg_output)
+                total_loss = (1 - TRIPLET_LOSS_WEIGHT) * supervised_loss + TRIPLET_LOSS_WEIGHT * triplet_loss
+                eval_loss += total_loss.item()
+                eval_supervised_loss += supervised_loss.item()
+                eval_triplet_loss += triplet_loss.item()
+
+                _, preds = torch.max(anchor_output, 1)
                 all_eval_predictions[eval_time].extend(preds.detach().cpu().numpy())
 
                 if eval_time == 0:
@@ -300,9 +364,16 @@ def eval_fn(model, valid_dataset, valid_loader, device, eval_times=5):
     for x in zip(*all_eval_predictions):
         eval_predictions.append(Counter(x).most_common()[0][0])
 
-    print("Finish evaluating, Loss: {}".format(eval_loss / len(valid_dataset)))
+    valid_size = len(valid_dataset)
+    avg_epoch_loss, avg_supervised_loss, avg_triplet_loss = eval_loss / valid_size, eval_supervised_loss / valid_size, \
+        eval_triplet_loss / valid_size
     report = classification_report(eval_labels, eval_predictions, output_dict=True)
-    return report
+    eval_losses = {
+        "supervised_loss": avg_supervised_loss,
+        "triplet_loss": avg_triplet_loss,
+        "total_loss": avg_epoch_loss
+    }
+    return report, eval_losses
 
 
 def load_fold_models(fold, device):
