@@ -11,6 +11,7 @@ from torch import nn
 from tqdm import tqdm
 from collections import Counter
 import time
+from models.triplet_loss import TripletLoss
 
 import torch
 import numpy as np
@@ -31,13 +32,13 @@ def load_common_transform(image_size=256, crop_size=224):
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
     train_transform = transforms.Compose([
-        transforms.RandomHorizontalFlip(),
+        transforms.RandomVerticalFlip(),
         transforms.RandomRotation(degrees=(-5, 5)),
         transforms.Resize(image_size),
         transforms.CenterCrop(crop_size),
         transforms.ToTensor(),
-        transforms.Normalize(mean=mean, std=std),
-        # AddGaussianNoise(0., 0.005)
+        AddGaussianNoise(0., 0.005),
+        transforms.Normalize(mean=mean, std=std)
     ])
 
     valid_transform = transforms.Compose([
@@ -136,7 +137,7 @@ def train_fn(model_name, fold_idx):
     num_classes = 3
     epochs = 50
 
-    device = torch.device("cuda:3")
+    device = torch.device("cuda:2")
     # device = torch.device("cpu")
 
     if model_name == "wide_resnet":
@@ -159,33 +160,44 @@ def train_fn(model_name, fold_idx):
     # lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
 
     best_acc_f1 = 0.
+    triplet_criterion = TripletLoss()
 
     for epoch in range(epochs):
 
         train_predictions, train_labels = [], []
         epoch_loss = 0.
+        epoch_supervised_loss, epoch_triplet_loss = 0., 0.
 
         for batch in tqdm(train_loader, desc="Training"):
-            inputs, labels_cpu = batch["image"], batch["label"]
-            inputs = inputs.to(device)
-            labels = labels_cpu.to(device)
+            inputs, labels_cpu, pos_inputs, neg_inputs = batch["image"], batch["label"], \
+                                                         batch["pos_image"], batch["neg_image"]
+            inputs, labels, pos_inputs, neg_inputs = inputs.to(device), labels_cpu.to(device), \
+                pos_inputs.to(device), neg_inputs.to(device)
 
-            output = model(inputs)
-            loss = F.cross_entropy(output, labels)
-            epoch_loss += loss.item()
+            anchor_output = model(inputs)
+            pos_output = model(pos_inputs)
+            neg_output = model(neg_inputs)
+
+            supervised_loss = F.cross_entropy(anchor_output, labels)
+            triplet_loss = triplet_criterion(anchor_output, pos_output, neg_output)
+            total_loss = supervised_loss + triplet_loss
+            epoch_loss += total_loss.item()
+            epoch_supervised_loss += supervised_loss.item()
+            epoch_triplet_loss += triplet_loss.item()
 
             # update the parameters
             optimizer.zero_grad()
-            loss.backward()
+            total_loss.backward()
             optimizer.step()
 
-            _, preds = torch.max(output, 1)
+            _, preds = torch.max(anchor_output, 1)
             train_predictions.extend(preds.detach().cpu().numpy())
             train_labels.extend(labels_cpu.numpy())
 
         # lr_scheduler.step()
 
-        print("Finish training Epoch: {}; Loss: {}".format(epoch+1, epoch_loss / train_size))
+        print("Finish training Epoch: {}; Supervised Loss: {}; Triplet Loss: {}; Total Loss: {};".format(
+            epoch+1, epoch_supervised_loss / train_size, epoch_triplet_loss / train_size, epoch_loss / train_size))
         train_report = classification_report(train_labels, train_predictions, output_dict=True)
         train_acc, train_f1 = train_report["accuracy"], train_report["macro avg"]["f1-score"]
         print("Train Acc: {}; F1: {}".format(train_acc, train_f1))
@@ -212,7 +224,7 @@ def train_fn(model_name, fold_idx):
         avg_acc_f1 = (valid_acc + valid_f1) / 2
         if avg_acc_f1 > best_acc_f1:
             best_acc_f1 = avg_acc_f1
-            checkpoint_dir = os.path.join("trained_models", exp_name)
+            checkpoint_dir = os.path.join("trained_models_test", exp_name)
             os.makedirs(checkpoint_dir, exist_ok=True)
             checkpoint_path = os.path.join(checkpoint_dir, "best.pth")
             state = {
@@ -296,17 +308,18 @@ def eval_fn(model, valid_dataset, valid_loader, device, eval_times=5):
 def load_fold_models(fold, device):
     num_classes = 3
     wide_resnet, resnext, densenet = None, None, None
-    for folder in os.listdir("trained_models"):
+    trained_model_dir = "trained_models_0.97945"
+    for folder in os.listdir(trained_model_dir):
         if folder.startswith("pretrained-wide-resnet-{}".format(fold)):
-            wide_resnet_checkpoint_path = os.path.join("trained_models", folder, "best.pth")
+            wide_resnet_checkpoint_path = os.path.join(trained_model_dir, folder, "best.pth")
             wide_resnet, _, _, _ = load_wide_resnet(num_classes, device)
             wide_resnet.load_state_dict(torch.load(wide_resnet_checkpoint_path)["model"])
         if folder.startswith("pretrained-resnext-{}".format(fold)):
-            resnext_checkpoint_path = os.path.join("trained_models", folder, "best.pth")
+            resnext_checkpoint_path = os.path.join(trained_model_dir, folder, "best.pth")
             resnext, _, _, _ = load_pretrained_resnext(num_classes, device)
             resnext.load_state_dict(torch.load(resnext_checkpoint_path)["model"])
         if folder.startswith("pretrained-densenet-{}".format(fold)):
-            densenet_checkpoint_path = os.path.join("trained_models", folder, "best.pth")
+            densenet_checkpoint_path = os.path.join(trained_model_dir, folder, "best.pth")
             densenet, _, _, _ = load_pretrained_densenet(num_classes, device)
             densenet.load_state_dict(torch.load(densenet_checkpoint_path)["model"])
     return wide_resnet, resnext, densenet
@@ -314,8 +327,8 @@ def load_fold_models(fold, device):
 
 if __name__ == "__main__":
     start_time = time.time()
-    for f in range(7, 8):
-        for model_n in ["resnext"]:
+    for f in range(2, 3):
+        for model_n in ["wide_resnet"]:
             train_fn(model_n, f)
     end_time = time.time()
     print("Finished in {}".format(end_time - start_time))
