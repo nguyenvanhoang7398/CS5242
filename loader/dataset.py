@@ -41,6 +41,9 @@ class MedicalImageDataset(Dataset):
         if self.transform:
             anchor_img = self.transform(anchor_img)
 
+        # reconstructed_img = functional.to_pil_image(anchor_img)
+        # reconstructed_img.show()
+
         anchor_label = -1 if self.test else self.label_data.iloc[anchor_item]["Label"]
         sample = {
             "id": anchor_idx,

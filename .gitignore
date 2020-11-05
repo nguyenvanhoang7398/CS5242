@@ -9,3 +9,5 @@ data/
 .idea/
 **/__pycache__/**
 runs
+*.out
+*.txt

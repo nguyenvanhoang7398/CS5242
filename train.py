@@ -56,10 +56,12 @@ def load_common_transform(image_size=256, crop_size=224):
     train_transform = transforms.Compose([
         transforms.RandomHorizontalFlip(),
         transforms.RandomRotation(degrees=(-15, 15)),
+        transforms.ColorJitter(brightness=0.5),
+        # transforms.GaussianBlur(kernel_size=5, sigma=(0.01, 1.0)),
         transforms.Resize(image_size),
         transforms.CenterCrop(crop_size),
         transforms.ToTensor(),
-        # AddGaussianNoise(0., 0.001),
+        # AddGaussianNoise(0., 0.01),
         transforms.Normalize(mean=mean, std=std)
     ])
 
@@ -92,9 +94,40 @@ def load_old_transform(image_size=256, crop_size=224):
     return train_transform, valid_transform
 
 
+def load_inception_v3(num_classes, device):
+    model = models.inception_v3(pretrained=True).to(device)
+    trained_layer_indices = [16, 17]
+
+    for i, child in enumerate(model.children()):
+        if i not in trained_layer_indices:
+            for param in child.parameters():
+                param.requires_grad = False
+
+    num_ftrs = model.fc.in_features
+    model.fc = nn.Linear(num_ftrs, num_classes).to(device)
+
+    train_transform, valid_transform = load_transform(image_size=299, crop_size=299)
+    return model, train_transform, valid_transform, "pretrained-inception"
+
+
+def load_resnet(num_classes, device):
+    model = models.resnet152(pretrained=True).to(device)
+    trained_layer_indices = [7, 9]
+
+    for i, child in enumerate(model.children()):
+        if i not in trained_layer_indices:
+            for param in child.parameters():
+                param.requires_grad = False
+    num_ftrs = model.fc.in_features
+    model.fc = nn.Linear(num_ftrs, num_classes).to(device)
+
+    train_transform, valid_transform = load_transform(image_size=256, crop_size=224)
+    return model, train_transform, valid_transform, "pretrained-resnet"
+
+
 def load_alexnet(num_classes, device):
     model = AlexNet(num_classes).to(device)
-    train_transform, valid_transform = load_full_size_transform()
+    train_transform, valid_transform = load_common_transform()
     return model, train_transform, valid_transform, "alexnet"
 
 
@@ -152,59 +185,69 @@ def load_pretrained_resnext(num_classes, device):
     return model, train_transform, valid_transform, "pretrained-resnext"
 
 
-def create_loaders(train_transform, valid_transform, fold_idx=0):
-    batch_size = 64
-    train_label_path = os.path.join("image_data", "folds", "fold_{}".format(fold_idx), "train_labels.csv")
-    valid_label_path = os.path.join("image_data", "folds", "fold_{}".format(fold_idx), "valid_labels.csv")
-    image_dir = os.path.join("image_data", "train_image", "train_image")
+def create_loaders(train_transform, valid_transform, fold_idx=0, fold_name="folds-v1", shuffle_train=True):
+    batch_size = 128
+    if fold_idx == "all":
+        train_label_path = os.path.join("train_label.csv")
+        valid_label_path = train_label_path
+    else:
+        train_label_path = os.path.join(fold_name, "fold_{}".format(fold_idx), "train_labels.csv")
+        valid_label_path = os.path.join(fold_name, "fold_{}".format(fold_idx), "valid_labels.csv")
+    image_dir = os.path.join("train_image", "train_image")
 
     train_dataset = MedicalImageDataset(label_path=train_label_path, image_dir=image_dir, transform=train_transform)
     valid_dataset = MedicalImageDataset(label_path=valid_label_path, image_dir=image_dir, transform=valid_transform)
+    print("Loaded {} train and {} validation examples for fold {}".format(len(train_dataset), len(valid_dataset),
+                                                                          fold_idx))
     train_loader = DataLoader(train_dataset, batch_size=batch_size,
-                              shuffle=True, num_workers=4)
+                              shuffle=shuffle_train, num_workers=4)
     valid_loader = DataLoader(valid_dataset, batch_size=batch_size,
                               shuffle=False, num_workers=4)
     return train_dataset, train_loader, valid_dataset, valid_loader
 
 
-def train_fn(model_name, fold_idx):
+def train_fn(model_name, fold_idx, epochs):
     print("Training {} on fold {}".format(model_name, fold_idx))
     num_classes = 3
-    epochs = 30
 
-    device = torch.device("cuda:3")
+    device = torch.device("cuda")
     # device = torch.device("cpu")
 
     if model_name == "wide_resnet":
-        model, train_transform, valid_transform, model_name = load_wide_resnet(num_classes, device)
+        model, train_transform, valid_transform, loaded_model_name = load_wide_resnet(num_classes, device)
     elif model_name == "densenet":
-        model, train_transform, valid_transform, model_name = load_pretrained_densenet(num_classes, device)
+        model, train_transform, valid_transform, loaded_model_name = load_pretrained_densenet(num_classes, device)
     elif model_name == "resnext":
-        model, train_transform, valid_transform, model_name = load_pretrained_resnext(num_classes, device)
+        model, train_transform, valid_transform, loaded_model_name = load_pretrained_resnext(num_classes, device)
     elif model_name == "small-cnn":
-        model, train_transform, valid_transform, model_name = load_small_cnn(num_classes, device)
+        model, train_transform, valid_transform, loaded_model_name = load_small_cnn(num_classes, device)
     elif model_name == "alexnet":
-        model, train_transform, valid_transform, model_name = load_alexnet(num_classes, device)
+        model, train_transform, valid_transform, loaded_model_name = load_alexnet(num_classes, device)
+    elif model_name == "resnet":
+        model, train_transform, valid_transform, loaded_model_name = load_resnet(num_classes, device)
+    elif model_name == "inception":
+        model, train_transform, valid_transform, loaded_model_name = load_inception_v3(num_classes, device)
     else:
         raise ValueError("Unsupported model {}".format(model_name))
 
-    exp_name = get_exp_name(model_name, fold_idx)
+    exp_name = get_exp_name(loaded_model_name, fold_idx)
     writer = SummaryWriter(os.path.join("runs", exp_name))
 
     train_dataset, train_loader, valid_dataset, valid_loader = create_loaders(train_transform, valid_transform,
-                                                                              fold_idx=fold_idx)
+                                                                              fold_idx=fold_idx,
+                                                                              fold_name="folds-v1")
     train_size = len(train_dataset)
 
-    optimizer = optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), lr=0.0001, weight_decay=1e-2)
+    optimizer = optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), lr=0.0001, weight_decay=5e-2)
     # optimizer = optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), lr=0.001, weight_decay=0)
-    # lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    # lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
     lr_scheduler = None
 
     best_acc_f1 = 0.
     triplet_criterion = TripletLoss(margin=1.0)   # Tune this
 
     for epoch in range(epochs):
-
+        model.train()
         train_predictions, train_labels = [], []
         epoch_loss = 0.
         epoch_supervised_loss, epoch_triplet_loss = 0., 0.
@@ -215,9 +258,16 @@ def train_fn(model_name, fold_idx):
             inputs, labels, pos_inputs, neg_inputs = inputs.to(device), labels_cpu.to(device), \
                 pos_inputs.to(device), neg_inputs.to(device)
 
-            anchor_output = model(inputs)
+            anchor_output_raw = model(inputs)
 
-            supervised_loss = F.cross_entropy(anchor_output, labels)
+            if model_name == "inception":
+                anchor_output_tensor = anchor_output_raw[0]
+                prob = F.softmax(anchor_output_tensor, dim=0)
+                supervised_loss = F.cross_entropy(prob, labels)
+                anchor_output = anchor_output_tensor
+            else:
+                anchor_output = anchor_output_raw
+                supervised_loss = F.cross_entropy(anchor_output, labels)
             if TRIPLET_LOSS_WEIGHT == 0:
                 total_loss = supervised_loss
                 epoch_triplet_loss += 0
@@ -293,16 +343,15 @@ def train_fn(model_name, fold_idx):
             print("Save best model to {}".format(checkpoint_path))
 
 
-def eval_ensemble_fn(model_list, valid_dataset, valid_loader, device):
-    for model in model_list:
-        model.eval()
-
+def eval_ensemble_fn(model_list, valid_dataset, valid_loader, device, model_names=None):
     all_eval_predictions, all_numeric_predictions, eval_labels = [[] for _ in range(len(model_list))], \
                                                                  [[] for _ in range(len(model_list))], []
     eval_loss = 0.
 
     with torch.no_grad():
         for model_idx, model in enumerate(model_list):
+            model.eval()
+            model.to(device)
             for batch in tqdm(valid_loader, desc="Evaluating"):
                 inputs, labels_cpu = batch["image"], batch["label"]
                 inputs = inputs.to(device)
@@ -323,6 +372,12 @@ def eval_ensemble_fn(model_list, valid_dataset, valid_loader, device):
     eval_predictions = []
     for x in zip(*all_eval_predictions):
         eval_predictions.append(Counter(x).most_common()[0][0])
+
+    if model_names is not None:
+        for model_name, model_predictions in zip(model_names, all_eval_predictions):
+            report = classification_report(eval_labels, model_predictions, output_dict=True)
+            model_accuracy = report["accuracy"]
+            print("Accuracy for model {} = {}".format(model_name, model_accuracy))
 
     print("Finish evaluating, Loss: {}".format(eval_loss / len(valid_dataset)))
     report = classification_report(eval_labels, eval_predictions, output_dict=True)
@@ -378,10 +433,9 @@ def eval_fn(model, valid_dataset, valid_loader, device, triplet_criterion, eval_
     return report, eval_losses
 
 
-def load_fold_models(fold, device):
+def load_fold_models(fold, device, trained_model_dir):
     num_classes = 3
-    wide_resnet, resnext, densenet = None, None, None
-    trained_model_dir = "trained_models"
+    wide_resnet, resnext, densenet, resnet = None, None, None, None
     for folder in os.listdir(trained_model_dir):
         if folder.startswith("pretrained-wide-resnet-{}".format(fold)):
             wide_resnet_checkpoint_path = os.path.join(trained_model_dir, folder, "best.pth")
@@ -395,13 +449,17 @@ def load_fold_models(fold, device):
             densenet_checkpoint_path = os.path.join(trained_model_dir, folder, "best.pth")
             densenet, _, _, _ = load_pretrained_densenet(num_classes, device)
             densenet.load_state_dict(torch.load(densenet_checkpoint_path)["model"])
-    return wide_resnet, resnext, densenet
+        if folder.startswith("pretrained-resnet-{}".format(fold)):
+            resnet_checkpoint_path = os.path.join(trained_model_dir, folder, "best.pth")
+            resnet, _, _, _ = load_resnet(num_classes, device)
+            resnet.load_state_dict(torch.load(resnet_checkpoint_path)["model"])
+    return wide_resnet, resnext, densenet, resnet
 
 
 if __name__ == "__main__":
     start_time = time.time()
-    for f in range(0, 1):
-        for model_n in ["wide_resnet"]:
+    for f in range(0, 10):
+        for model_n in ["wide_resnet", "densenet", "resnet", "resnext"]:
             train_fn(model_n, f)
     end_time = time.time()
     print("Finished in {}".format(end_time - start_time))
