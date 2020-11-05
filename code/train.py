@@ -1,6 +1,5 @@
-from torch.utils.tensorboard import SummaryWriter
 from sklearn.metrics import classification_report
-from loader.dataset import MedicalImageDataset
+from code.loader.dataset import MedicalImageDataset
 import os
 from torchvision import transforms
 from torchvision import models
@@ -11,15 +10,15 @@ from torch import nn
 from tqdm import tqdm
 from collections import Counter
 import time
-from models.triplet_loss import TripletLoss
-from models.small_cnn import SmallCNN
-from models.alexnet import AlexNet
+from code.models.triplet_loss import TripletLoss
+from code.models.small_cnn import SmallCNN
+from code.models.alexnet import AlexNet
 
 import torch
 import numpy as np
-from loader.augmentor import AddGaussianNoise
+from code.loader.augmentor import AddGaussianNoise
 import torch.optim as optim
-from utils import get_exp_name
+from code.utils import get_exp_name
 
 SEED = 42
 
@@ -185,14 +184,14 @@ def load_pretrained_resnext(num_classes, device):
     return model, train_transform, valid_transform, "pretrained-resnext"
 
 
-def create_loaders(train_transform, valid_transform, fold_idx=0, fold_name="folds", shuffle_train=True):
+def create_loaders(train_transform, valid_transform, fold_idx=0, fold_path="folds", shuffle_train=True):
     batch_size = 32
     if fold_idx == "all":
         train_label_path = os.path.join("train_label.csv")
         valid_label_path = train_label_path
     else:
-        train_label_path = os.path.join(fold_name, "fold_{}".format(fold_idx), "train_labels.csv")
-        valid_label_path = os.path.join(fold_name, "fold_{}".format(fold_idx), "valid_labels.csv")
+        train_label_path = os.path.join(fold_path, "fold_{}".format(fold_idx), "train_labels.csv")
+        valid_label_path = os.path.join(fold_path, "fold_{}".format(fold_idx), "valid_labels.csv")
     image_dir = os.path.join("train_image", "train_image")
 
     train_dataset = MedicalImageDataset(label_path=train_label_path, image_dir=image_dir, transform=train_transform)
@@ -206,7 +205,7 @@ def create_loaders(train_transform, valid_transform, fold_idx=0, fold_name="fold
     return train_dataset, train_loader, valid_dataset, valid_loader
 
 
-def train_fn(model_name, fold_idx, epochs):
+def train_fn(model_name, fold_idx, epochs, fold_path):
     print("Training {} on fold {}".format(model_name, fold_idx))
     num_classes = 3
 
@@ -231,11 +230,10 @@ def train_fn(model_name, fold_idx, epochs):
         raise ValueError("Unsupported model {}".format(model_name))
 
     exp_name = get_exp_name(loaded_model_name, fold_idx)
-    writer = SummaryWriter(os.path.join("runs", exp_name))
 
     train_dataset, train_loader, valid_dataset, valid_loader = create_loaders(train_transform, valid_transform,
                                                                               fold_idx=fold_idx,
-                                                                              fold_name="folds")
+                                                                              fold_path=fold_path)
     train_size = len(train_dataset)
 
     optimizer = optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), lr=0.0001, weight_decay=5e-2)
@@ -293,7 +291,6 @@ def train_fn(model_name, fold_idx, epochs):
         if lr_scheduler is not None:
             lr_scheduler.step()
             train_lr = lr_scheduler.get_last_lr()[0]
-            writer.add_scalar(tag="train_lr", scalar_value=train_lr, global_step=epoch)
 
         avg_supervised_loss, avg_triplet_loss, avg_epoch_loss = epoch_supervised_loss / train_size, \
             epoch_triplet_loss / train_size, epoch_loss / train_size
@@ -302,36 +299,21 @@ def train_fn(model_name, fold_idx, epochs):
         train_report = classification_report(train_labels, train_predictions, output_dict=True)
         train_acc, train_f1 = train_report["accuracy"], train_report["macro avg"]["f1-score"]
         print("Train Acc: {}; F1: {}".format(train_acc, train_f1))
-        for metric_name, metric_values in train_report.items():
-            if type(metric_values) == dict:
-                writer.add_scalars(main_tag="train_{}".format(metric_name), tag_scalar_dict=metric_values,
-                                   global_step=epoch)
-            else:
-                writer.add_scalar(tag="train_{}".format(metric_name), scalar_value=metric_values,
-                                  global_step=epoch)
+
         train_losses = {
             "supervised_loss": avg_supervised_loss,
             "triplet_loss": avg_triplet_loss,
             "total_loss": avg_epoch_loss
         }
-        writer.add_scalars(main_tag="train_loss", tag_scalar_dict=train_losses, global_step=epoch)
         print("Begin evaluating")
         valid_report, valid_losses = eval_fn(model, valid_dataset, valid_loader, device, triplet_criterion, 1)
         valid_acc, valid_f1 = valid_report["accuracy"], valid_report["macro avg"]["f1-score"]
         print("Valid Acc: {}; F1: {}".format(valid_acc, valid_f1))
 
-        for metric_name, metric_values in valid_report.items():
-            if type(metric_values) == dict:
-                writer.add_scalars(main_tag="valid_{}".format(metric_name), tag_scalar_dict=metric_values,
-                                   global_step=epoch)
-            else:
-                writer.add_scalar(tag="valid_{}".format(metric_name), scalar_value=metric_values,
-                                  global_step=epoch)
-        writer.add_scalars(main_tag="valid_loss", tag_scalar_dict=valid_losses, global_step=epoch)
         avg_acc_f1 = (valid_acc + valid_f1) / 2
         if avg_acc_f1 > best_acc_f1:
             best_acc_f1 = avg_acc_f1
-            checkpoint_dir = os.path.join("trained_models", exp_name)
+            checkpoint_dir = os.path.join("ckp", exp_name)
             os.makedirs(checkpoint_dir, exist_ok=True)
             checkpoint_path = os.path.join(checkpoint_dir, "best.pth")
             state = {
@@ -454,12 +436,3 @@ def load_fold_models(fold, device, trained_model_dir):
             resnet, _, _, _ = load_resnet(num_classes, device)
             resnet.load_state_dict(torch.load(resnet_checkpoint_path)["model"])
     return wide_resnet, resnext, densenet, resnet
-
-
-if __name__ == "__main__":
-    start_time = time.time()
-    for f in range(0, 10):
-        for model_n in ["wide_resnet", "densenet", "resnet", "resnext"]:
-            train_fn(model_n, f)
-    end_time = time.time()
-    print("Finished in {}".format(end_time - start_time))

@@ -46,11 +46,3 @@ def compare_2_submission(base, new):
     new_y = np.array(new_df["Label"].tolist())
 
     print("Accuracy = {}".format(accuracy_score(base_y, new_y)))
-
-
-if __name__ == "__main__":
-    create_validation_folds(os.path.join("train_label.csv"), os.path.join("folds"))
-    # compare_2_submission("prediction_wide_resnet.csv", "prediction_wide_resnet_tuned.csv")
-    # compare_2_submission("prediction_ensemble.csv", "prediction_ensemble_rf.csv")
-    # compare_2_submission("prediction_ensemble_rf2.csv", "prediction_ensemble_rf3.csv")
-    # compare_2_submission("prediction_ensemble_rf2.csv", "recovery_split_0.7_lr.csv")

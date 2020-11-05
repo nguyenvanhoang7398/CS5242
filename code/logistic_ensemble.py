@@ -5,7 +5,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn import svm
 import torch
-from train import load_common_transform, load_wide_resnet, load_pretrained_resnext, load_pretrained_densenet, \
+from code.train import load_common_transform, load_wide_resnet, load_pretrained_resnext, load_pretrained_densenet, \
     create_loaders, load_fold_models, eval_ensemble_fn
 import pickle
 from collections import Counter
@@ -71,7 +71,7 @@ def train_test_ensembles(train_features, train_labels, valid_features, valid_lab
     return (rf_classifier, rf_valid_acc), (lr_classifier, lr_valid_acc), (svm_classifier, svm_valid_acc)
 
 
-def logistic_ensemble(ensemble_method, trained_model_dir, device=None, n_folds=10, overwrite_train_cache=False,
+def logistic_ensemble(ensemble_method, trained_model_dir, fold_path, device=None, n_folds=10, overwrite_train_cache=False,
                       overwrite_valid_cache=False):
     print("Ensemble using {}".format(ensemble_method))
     device = torch.device("cuda") if device is None else device
@@ -90,7 +90,7 @@ def logistic_ensemble(ensemble_method, trained_model_dir, device=None, n_folds=1
         # we use the train loader to train ensemble classifier, so we don't have to use augmentation here
         train_dataset, train_loader, valid_dataset, valid_loader = create_loaders(train_transform=predict_transform,
                                                                                   valid_transform=predict_transform,
-                                                                                  fold_idx=fold, fold_name="folds",
+                                                                                  fold_idx=fold, fold_path="folds",
                                                                                   shuffle_train=False)
         wide_resnet, resnext, densenet, resnet = load_fold_models(fold, device, trained_model_dir=trained_model_dir)
         wide_resnet.eval(), resnext.eval(), densenet.eval(), resnet.eval()
