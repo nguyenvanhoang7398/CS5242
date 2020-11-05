@@ -94,14 +94,15 @@ def predict_all(test_data):
     predict_df.to_csv(os.path.join(outfile), index=False)
 
 
-def predict_logistic_ensemble(fold_path, test_data, classifier_type="fold"):
+def predict_logistic_ensemble(fold_path, train_data, test_data, classifier_type="fold"):
     outfile = "test_result.csv"
     ensemble_method = "mv"
     ensemble_plus_models = ["rf"]
     trained_model_dir = "ckp"
     device = torch.device("cuda")
     n_folds = 10
-    classifiers, model_list, predict_transform, whole_classifier = logistic_ensemble(ensemble_method=ensemble_method,
+    classifiers, model_list, predict_transform, whole_classifier = logistic_ensemble(train_data=train_data,
+                                                                                     ensemble_method=ensemble_method,
                                                                                      device=device, n_folds=n_folds,
                                                                                      overwrite_train_cache=False,
                                                                                      overwrite_valid_cache=False,

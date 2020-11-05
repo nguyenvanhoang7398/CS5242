@@ -184,7 +184,7 @@ def load_pretrained_resnext(num_classes, device):
     return model, train_transform, valid_transform, "pretrained-resnext"
 
 
-def create_loaders(train_transform, valid_transform, fold_idx=0, fold_path="folds", shuffle_train=True):
+def create_loaders(train_data, train_transform, valid_transform, fold_idx=0, fold_path="folds", shuffle_train=True):
     batch_size = 32
     if fold_idx == "all":
         train_label_path = os.path.join("train_label.csv")
@@ -192,7 +192,7 @@ def create_loaders(train_transform, valid_transform, fold_idx=0, fold_path="fold
     else:
         train_label_path = os.path.join(fold_path, "fold_{}".format(fold_idx), "train_labels.csv")
         valid_label_path = os.path.join(fold_path, "fold_{}".format(fold_idx), "valid_labels.csv")
-    image_dir = os.path.join("train_image", "train_image")
+    image_dir = os.path.join(train_data, "train_image")
 
     train_dataset = MedicalImageDataset(label_path=train_label_path, image_dir=image_dir, transform=train_transform)
     valid_dataset = MedicalImageDataset(label_path=valid_label_path, image_dir=image_dir, transform=valid_transform)
