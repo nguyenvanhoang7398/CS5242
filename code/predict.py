@@ -48,7 +48,7 @@ def predict_ensemble_fn(model_list, predict_loader, device, outfile="predictions
 def predict_all(test_data):
     outfile = "predictions.csv"
     trained_model_dir = "trained_models_recover"
-    device = torch.device("cuda")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     overwrite_train_cache = True
 
     train_transform, predict_transform = load_common_transform()
@@ -99,7 +99,7 @@ def predict_logistic_ensemble(fold_path, train_data, test_data, classifier_type=
     ensemble_method = "mv"
     ensemble_plus_models = ["rf"]
     trained_model_dir = "ckp"
-    device = torch.device("cuda")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     n_folds = 10
     classifiers, model_list, predict_transform, whole_classifier = logistic_ensemble(train_data=train_data,
                                                                                      ensemble_method=ensemble_method,

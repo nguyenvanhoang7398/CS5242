@@ -209,8 +209,7 @@ def train_fn(train_data, model_name, fold_idx, epochs, fold_path):
     print("Training {} on fold {}".format(model_name, fold_idx))
     num_classes = 3
 
-    device = torch.device("cuda")
-    # device = torch.device("cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if model_name == "wide_resnet":
         model, train_transform, valid_transform, loaded_model_name = load_wide_resnet(num_classes, device)
