@@ -19,7 +19,7 @@ class MedicalImageDataset(Dataset):
             self.index = self.label_data.iloc[:, 0].values
         else:
             self.label_data = None
-            self.size = 292     # hard code this
+            self.size = sum(1 for f in os.listdir(image_dir) if f.endswith('.png'))
         self.transform = transform
 
     def __len__(self):
