@@ -15,7 +15,7 @@ python run_project.py
 ```
 
 ## Dependencies
-sklearn==0.23.1
-numpy==1.18.5
-torch==1.7.0
-tensorboard==2.3.0
+* sklearn==0.23.1
+* numpy==1.18.5
+* torch==1.7.0
+* tensorboard==2.3.0
