@@ -205,7 +205,7 @@ def create_loaders(train_data, train_transform, valid_transform, fold_idx=0, fol
     return train_dataset, train_loader, valid_dataset, valid_loader
 
 
-def train_fn(model_name, fold_idx, epochs, fold_path):
+def train_fn(train_data, model_name, fold_idx, epochs, fold_path):
     print("Training {} on fold {}".format(model_name, fold_idx))
     num_classes = 3
 
@@ -231,7 +231,8 @@ def train_fn(model_name, fold_idx, epochs, fold_path):
 
     exp_name = get_exp_name(loaded_model_name, fold_idx)
 
-    train_dataset, train_loader, valid_dataset, valid_loader = create_loaders(train_transform, valid_transform,
+    train_dataset, train_loader, valid_dataset, valid_loader = create_loaders(train_data,
+                                                                              train_transform, valid_transform,
                                                                               fold_idx=fold_idx,
                                                                               fold_path=fold_path)
     train_size = len(train_dataset)
