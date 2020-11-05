@@ -14,7 +14,7 @@ from scipy.special import softmax
 
 def create_predict_loaders(predict_transform, test_data):
     batch_size = 16
-    test_image_dir = os.path.join(test_data, "test_image")
+    test_image_dir = os.path.join(test_data, "test_images")
     predict_dataset = MedicalImageDataset(label_path=None, image_dir=test_image_dir, transform=predict_transform,
                                           test=True)
     predict_loader = DataLoader(predict_dataset, batch_size=batch_size,

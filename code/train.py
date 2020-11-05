@@ -192,7 +192,7 @@ def create_loaders(train_data, train_transform, valid_transform, fold_idx=0, fol
     else:
         train_label_path = os.path.join(fold_path, "fold_{}".format(fold_idx), "train_labels.csv")
         valid_label_path = os.path.join(fold_path, "fold_{}".format(fold_idx), "valid_labels.csv")
-    image_dir = os.path.join(train_data, "train_image")
+    image_dir = os.path.join(train_data, "train_images")
 
     train_dataset = MedicalImageDataset(label_path=train_label_path, image_dir=image_dir, transform=train_transform)
     valid_dataset = MedicalImageDataset(label_path=valid_label_path, image_dir=image_dir, transform=valid_transform)
