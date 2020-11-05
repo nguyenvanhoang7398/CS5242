@@ -1,23 +1,21 @@
-# CS5242
+# CS5242: Neural Networks and Deep Learning
+This is a single-class multi-classification task based on medical images
+
 
 ## Resources
-* Download data from [Kaggle](https://www.kaggle.com/c/nus-cs5242/data).
-
-* Rename to `image_data/`
-
-## Create 10-folds for cross validation
-
+* Download and unzip data from [Kaggle](https://www.kaggle.com/c/nus-cs5242/data).
 ```
-python utils.py
+kaggle competitions download -c nus-cs5242; unzip nus-cs5242.zip
 ```
 
-## Train
+## Run project
+Split model to 10 folds for cross-validation, train and generate predict to `predictions.csv`
 ```
-python train.py
+python run_project.py
 ```
 
-## Predict
-```
-# Predictions are generated in predictions.csv
-python predict.py
-```
+## Dependencies
+sklearn==0.23.1
+numpy==1.18.5
+torch==1.7.0
+tensorboard==2.3.0
