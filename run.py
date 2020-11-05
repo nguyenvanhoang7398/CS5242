@@ -10,7 +10,7 @@ def run_project(train_data, test_data):
     create_validation_folds(os.path.join(train_data, "train_label.csv"), fold_path)
     for f in range(0, 10):
         for model_n in ["wide_resnet", "densenet", "resnet", "resnext"]:
-            train_fn(model_n, f, epochs=50, fold_path=fold_path)
+            train_fn(train_data, model_n, f, epochs=50, fold_path=fold_path)
     predict_logistic_ensemble(classifier_type="fold", fold_path=fold_path,
                               train_data=train_data, test_data=test_data)
 
