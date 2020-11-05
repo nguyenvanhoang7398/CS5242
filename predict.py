@@ -32,7 +32,7 @@ def predict():
         train_dataset, train_loader, valid_dataset, valid_loader = create_loaders(train_transform=train_transform,
                                                                                   valid_transform=predict_transform,
                                                                                   fold_idx=fold,
-                                                                                  fold_name="folds-v1",
+                                                                                  fold_name="folds",
                                                                                   shuffle_train=False)
         wide_resnet, resnext, densenet, resnet, inception = load_fold_models(fold, device,
                                                                              trained_model_dir="trained_models_0.97945")
@@ -90,7 +90,7 @@ def predict_all():
 
     train_dataset, train_loader, valid_dataset, valid_loader = create_loaders(train_transform=predict_transform,
                                                                               valid_transform=predict_transform,
-                                                                              fold_idx="all", fold_name="folds-v1",
+                                                                              fold_idx="all", fold_name="folds",
                                                                               shuffle_train=False)
     wide_resnet, resnext, densenet, resnet = load_fold_models("all", device, trained_model_dir=trained_model_dir)
 

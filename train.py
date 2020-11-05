@@ -185,7 +185,7 @@ def load_pretrained_resnext(num_classes, device):
     return model, train_transform, valid_transform, "pretrained-resnext"
 
 
-def create_loaders(train_transform, valid_transform, fold_idx=0, fold_name="folds-v1", shuffle_train=True):
+def create_loaders(train_transform, valid_transform, fold_idx=0, fold_name="folds", shuffle_train=True):
     batch_size = 128
     if fold_idx == "all":
         train_label_path = os.path.join("train_label.csv")
@@ -235,7 +235,7 @@ def train_fn(model_name, fold_idx, epochs):
 
     train_dataset, train_loader, valid_dataset, valid_loader = create_loaders(train_transform, valid_transform,
                                                                               fold_idx=fold_idx,
-                                                                              fold_name="folds-v1")
+                                                                              fold_name="folds")
     train_size = len(train_dataset)
 
     optimizer = optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), lr=0.0001, weight_decay=5e-2)
