@@ -3,7 +3,6 @@ from code.loader.dataset import MedicalImageDataset
 import os
 from torchvision import transforms
 from torchvision import models
-from torchvision.transforms import functional
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch import nn
@@ -27,7 +26,7 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 np.random.seed(SEED)
 
-TRIPLET_LOSS_WEIGHT = 0.0  # Tune this
+TRIPLET_LOSS_WEIGHT = 0.0
 
 
 def load_transform(image_size=256, crop_size=224):
@@ -37,9 +36,7 @@ def load_transform(image_size=256, crop_size=224):
 def load_full_size_transform():
     train_transform = transforms.Compose([
         transforms.RandomVerticalFlip(),
-        # transforms.RandomRotation(degrees=(-5, 5)),
-        transforms.ToTensor(),
-        # AddGaussianNoise(0., 0.001),
+        transforms.ToTensor()
     ])
 
     valid_transform = transforms.Compose([
@@ -56,37 +53,14 @@ def load_common_transform(image_size=256, crop_size=224):
         transforms.RandomHorizontalFlip(),
         transforms.RandomRotation(degrees=(-15, 15)),
         transforms.ColorJitter(brightness=0.5),
-        # transforms.GaussianBlur(kernel_size=5, sigma=(0.01, 1.0)),
         transforms.Resize(image_size),
         transforms.CenterCrop(crop_size),
         transforms.ToTensor(),
-        # AddGaussianNoise(0., 0.01),
         transforms.Normalize(mean=mean, std=std)
     ])
 
     valid_transform = transforms.Compose([
         transforms.Resize(size=(image_size, image_size), interpolation=2),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=mean, std=std)
-    ])
-    return train_transform, valid_transform
-
-
-def load_old_transform(image_size=256, crop_size=224):
-    mean = [0.485, 0.456, 0.406]
-    std = [0.229, 0.224, 0.225]
-    train_transform = transforms.Compose([
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomRotation(degrees=(-15, 15)),
-        transforms.Resize(image_size),
-        transforms.CenterCrop(crop_size),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=mean, std=std),
-        # AddGaussianNoise(0., 0.05)
-    ])
-
-    valid_transform = transforms.Compose([
-        transforms.Resize(image_size),
         transforms.ToTensor(),
         transforms.Normalize(mean=mean, std=std)
     ])
@@ -139,15 +113,12 @@ def load_small_cnn(num_classes, device):
 def load_wide_resnet(num_classes, device):
     model = models.wide_resnet101_2(pretrained=True).to(device)
     trained_layer_indices = [7, 9]
-    # trained_layer_indices = [6, 7, 9]
 
     for i, child in enumerate(model.children()):
         if i not in trained_layer_indices:
             for param in child.parameters():
                 param.requires_grad = False
     num_ftrs = model.fc.in_features
-    # model.layer4 = nn.Sequential().to(device)
-    # num_ftrs = 1024
     model.fc = nn.Linear(num_ftrs, num_classes).to(device)
 
     train_transform, valid_transform = load_transform(image_size=256, crop_size=224)
@@ -237,12 +208,10 @@ def train_fn(train_data, model_name, fold_idx, epochs, fold_path):
     train_size = len(train_dataset)
 
     optimizer = optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), lr=0.0001, weight_decay=5e-2)
-    # optimizer = optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), lr=0.001, weight_decay=0)
-    # lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
     lr_scheduler = None
 
     best_acc_f1 = 0.
-    triplet_criterion = TripletLoss(margin=1.0)   # Tune this
+    triplet_criterion = TripletLoss(margin=1.0)
 
     for epoch in range(epochs):
         model.train()
@@ -299,12 +268,6 @@ def train_fn(train_data, model_name, fold_idx, epochs, fold_path):
         train_report = classification_report(train_labels, train_predictions, output_dict=True)
         train_acc, train_f1 = train_report["accuracy"], train_report["macro avg"]["f1-score"]
         print("Train Acc: {}; F1: {}".format(train_acc, train_f1))
-
-        train_losses = {
-            "supervised_loss": avg_supervised_loss,
-            "triplet_loss": avg_triplet_loss,
-            "total_loss": avg_epoch_loss
-        }
         print("Begin evaluating")
         valid_report, valid_losses = eval_fn(model, valid_dataset, valid_loader, device, triplet_criterion, 1)
         valid_acc, valid_f1 = valid_report["accuracy"], valid_report["macro avg"]["f1-score"]

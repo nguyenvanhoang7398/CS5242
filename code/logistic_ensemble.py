@@ -32,7 +32,6 @@ def save_to_pickle(data, path):
 
 def train_test_ensembles(train_features, train_labels, valid_features, valid_labels, fold, added_valid=0.):
     # concatenate both train and valid features
-
     if added_valid == 1:
         input_features = np.concatenate([train_features, valid_features])
         input_labels = np.concatenate([train_labels, valid_labels])
