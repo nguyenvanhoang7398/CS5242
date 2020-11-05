@@ -186,7 +186,7 @@ def load_pretrained_resnext(num_classes, device):
 
 
 def create_loaders(train_transform, valid_transform, fold_idx=0, fold_name="folds", shuffle_train=True):
-    batch_size = 128
+    batch_size = 32
     if fold_idx == "all":
         train_label_path = os.path.join("train_label.csv")
         valid_label_path = train_label_path
