@@ -1,9 +1,8 @@
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 import torch
 import pandas as pd
 import os
 from PIL import Image
-from torchvision.transforms import functional
 import random
 random.seed(5242)
 
@@ -20,7 +19,7 @@ class MedicalImageDataset(Dataset):
             self.index = self.label_data.iloc[:, 0].values
         else:
             self.label_data = None
-            self.size = 292     # hard code this
+            self.size = sum(1 for f in os.listdir(image_dir) if f.endswith('.png'))
         self.transform = transform
 
     def __len__(self):
@@ -40,9 +39,6 @@ class MedicalImageDataset(Dataset):
 
         if self.transform:
             anchor_img = self.transform(anchor_img)
-
-        # reconstructed_img = functional.to_pil_image(anchor_img)
-        # reconstructed_img.show()
 
         anchor_label = -1 if self.test else self.label_data.iloc[anchor_item]["Label"]
         sample = {
