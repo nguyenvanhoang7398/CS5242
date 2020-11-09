@@ -107,7 +107,7 @@ def logistic_ensemble(train_data, ensemble_method, trained_model_dir, fold_path,
             train_report, train_predictions, train_labels = eval_ensemble_fn(used_models,
                                                                              train_dataset, train_loader, device,
                                                                              model_names=used_model_names)
-            save_to_pickle((train_report, train_predictions, train_labels), train_cache_name)
+            # save_to_pickle((train_report, train_predictions, train_labels), train_cache_name)
         else:
             train_report, train_predictions, train_labels = load_from_pickle(train_cache_name)
         train_acc, train_f1 = train_report["accuracy"], train_report["macro avg"]["f1-score"]
@@ -119,7 +119,7 @@ def logistic_ensemble(train_data, ensemble_method, trained_model_dir, fold_path,
             valid_report, valid_predictions, valid_labels = eval_ensemble_fn(used_models,
                                                                              valid_dataset, valid_loader, device,
                                                                              model_names=used_model_names)
-            save_to_pickle((valid_report, valid_predictions, valid_labels), cache_name)
+            # save_to_pickle((valid_report, valid_predictions, valid_labels), cache_name)
         else:
             valid_report, valid_predictions, valid_labels = load_from_pickle(cache_name)
         valid_acc, valid_f1 = valid_report["accuracy"], valid_report["macro avg"]["f1-score"]
