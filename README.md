@@ -4,10 +4,13 @@ This is a single-class multi-classification task based on medical images.
 
 ## Resources
 Download and unzip data from [Kaggle](https://www.kaggle.com/c/nus-cs5242/data).
+
 ```
 kaggle competitions download -c nus-cs5242; unzip nus-cs5242.zip
 ```
+
 Refactor the data structure.
+
 ```
 train_data/
     train_label.csv
@@ -18,7 +21,14 @@ test_data/
 ```
 
 ## Run project
+Install requirements:
+
+```
+pip install -r requirements.txt
+```
+
 Split model to 10 folds for cross-validation, train and generate predict to `predictions.csv`.
+
 ```
 python run.py train_data test_data
 ```

@@ -32,7 +32,6 @@ def save_to_pickle(data, path):
 
 def train_test_ensembles(train_features, train_labels, valid_features, valid_labels, fold, added_valid=0.):
     # concatenate both train and valid features
-
     if added_valid == 1:
         input_features = np.concatenate([train_features, valid_features])
         input_labels = np.concatenate([train_labels, valid_labels])
@@ -74,7 +73,7 @@ def train_test_ensembles(train_features, train_labels, valid_features, valid_lab
 def logistic_ensemble(train_data, ensemble_method, trained_model_dir, fold_path, device=None, n_folds=10, overwrite_train_cache=False,
                       overwrite_valid_cache=False):
     print("Ensemble using {}".format(ensemble_method))
-    device = torch.device("cuda") if device is None else device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     train_transform, predict_transform = load_common_transform()
     all_valid_features, all_valid_labels = [], []
     classifiers = []
